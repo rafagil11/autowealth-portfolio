@@ -13,9 +13,9 @@
         <span class="text-xs uppercase tracking-widest text-emerald-400 font-semibold">DeFi / Web3 Traders</span>
         <h1 class="text-xl font-bold text-white">L2 Crypto Gas & Bridge Fee Calculator 2026</h1>
       </div>
-      <a href="#pro-unlock" class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm transition">
-        Desbloquear API / Pro ($2 USDC)
-      </a>
+      <button onclick="payWithWeb3()" id="btn-pay" class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-emerald-500/20">
+        ⚡ Pagar $2 USDT con Wallet (1-Clic)
+      </button>
     </div>
   </header>
 
@@ -77,6 +77,35 @@
       document.getElementById('out-ev').innerText = (ev >= 0 ? '+' : '') + ev.toFixed(2) + '%';
       document.getElementById('out-kelly').innerText = '$' + stake + ' USD';
       document.getElementById('out-roi').innerText = '+$' + roi + ' USD';
+    }
+    async function payWithWeb3() {
+      if (!window.ethereum) {
+        alert('Abre esta página desde un navegador con Rabby Wallet o MetaMask para pagar en 1 clic, o envía USDT a 0x188C350164B0BC9a5e9a5a06b37603A624B2D36A');
+        return;
+      }
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x89' }],
+        });
+        // ERC-20 transfer(address,uint256) of 2.00 USDT (0x1e8480 = 2,000,000 units) on Polygon USDT (0xc2132D05D31c914a87C6611C10748AEb04B58e8F)
+        const recipient = '0x188C350164B0BC9a5e9a5a06b37603A624B2D36A'.toLowerCase().replace('0x', '').padStart(64, '0');
+        const amountHex = (2000000).toString(16).padStart(64, '0');
+        const data = '0xa9059cbb' + recipient + amountHex;
+        const txHash = await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: accounts[0],
+            to: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+            data: data,
+          }],
+        });
+        alert('¡Pago Pro confirmado en Polygon! TX: ' + txHash);
+      } catch (err) {
+        console.error(err);
+        alert('Estado de transacción: ' + (err.message || err));
+      }
     }
     recalc();
   </script>
