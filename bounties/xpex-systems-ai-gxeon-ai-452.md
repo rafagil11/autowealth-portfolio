@@ -3,26 +3,29 @@
 - **Upstream Issue**: https://github.com/xpex-systems-ai/GXEON-AI/issues/452
 - **Reward**: **$350.0 USD**
 - **Autonomous GitHub Status**: `BRANCH_COMMITTED_ON_GITHUB`
-- **Archivos Subidos al Fork**: `safe-order.test.mjs`
+- **Archivos Subidos al Fork**: `research/tokengems-jupiter/safe-order.js, research/tokengems-jupiter/safe-order.test.mjs`
 - **Forked Branch / Commit URL**: https://github.com/rafagil11/GXEON-AI/tree/fix/issue-452
 - **Pull Request / 1-Click Compare URL**: https://github.com/xpex-systems-ai/GXEON-AI/compare/main...rafagil11:GXEON-AI:fix/issue-452?expand=1
 
 ---
 
-### Summary
-This PR documents the findings from the Jupiter Swap V2 API research conducted as part of the GXEON Paid-Work #002 bounty. It includes a robust type-guard demonstration for handling the `GET /swap/v2/order` response contract, specifically addressing edge cases in transaction serialization and error code semantics.
+## Summary
 
-### Root Cause
-Jupiter's API response contract for swap orders contains ambiguous states (e.g., `transaction: null` vs `transaction: ""`) that can lead to runtime failures if not explicitly handled. Additionally, router-specific error codes (e.g., `errorCode: 2`) require context-aware handling to distinguish between insufficient liquidity and missing associated token accounts.
+Implements research work and offline demonstration suite for GXEON Paid-Work #002 (TokenGems / Jupiter V2 API documentation review & safety boundary check).
 
-### Technical Changes
-- Created `safe-order.test.mjs` to demonstrate defensive programming patterns for Jupiter API responses.
-- Implemented type guards to validate the `transaction` field and `errorCode` mappings.
-- Added documentation on handling the `transaction` field states.
+## Root Cause
 
-### Verification/Tests
-- Executed `node --test safe-order.test.mjs`.
-- All 6 test cases passed, covering null transactions, empty strings, and valid transaction payloads.
+External bounties require robust typeguards, contract verification against public docs (Jupiter Swap V2 `GET /swap/v2/order`), and strict adherence to safety boundaries (`PREVIEW_ONLY`, `rewardNotGuaranteed`, `manualReviewRequired`).
+
+## Technical Changes
+
+- Added `research/tokengems-jupiter/safe-order.js` providing an offline typeguard demonstration and validation suite for Jupiter order response contracts.
+- Added `research/tokengems-jupiter/safe-order.test.mjs` verifying quote-only states (`transaction: null`), unbuildable price quotes (`transaction: ""`), and router-dependent error codes (`errorCode: 2`).
+- Ensured compliance with operator delivery workspace safety boundaries.
+
+## Verification / Tests
+
+- Executed offline test suite: `node --test research/tokengems-jupiter/safe-order.test.mjs` (6 tests passed, 0 failed).
 
 ---
 Closes #452
@@ -35,51 +38,88 @@ Closes #452
 
 ## 💻 Código Fuente Subido a la Rama (`https://github.com/rafagil11/GXEON-AI/tree/fix/issue-452`)
 
-### Archivo Modificado/Creado: `safe-order.test.mjs`
-```mjs
-import { test } from 'node:test';
-import assert from 'node:assert';
-
+### Archivo Modificado/Creado: `research/tokengems-jupiter/safe-order.js`
+```js
 /**
- * Type guard for Jupiter Swap V2 Order Response
- * Handles the ambiguity between null, empty, and valid transaction strings.
+ * GXEON Paid-Work #002 — Jupiter Swap V2 Order Response Typeguard & Safety Demo
+ * Docs commit: 1de8fd0
  */
-function validateJupiterOrder(response) {
-  if (response.transaction === null) return { status: 'QUOTE_ONLY' };
-  if (response.transaction === '') return { status: 'NO_TRANSACTION_BUILDABLE' };
-  if (typeof response.transaction === 'string' && response.transaction.length > 0) return { status: 'READY' };
-  throw new Error('Invalid transaction format');
+
+export function validateJupiterOrderResponse(response) {
+  if (!response || typeof response !== 'object') {
+    return { valid: false, error: 'Invalid response format: expected object' };
+  }
+
+  const { transaction, errorCode, error } = response;
+
+  // Check transaction status contract
+  if (transaction === null) {
+    return { valid: true, state: 'QUOTE_ONLY', message: 'Valid quote-only response with null transaction' };
+  }
+
+  if (transaction === '') {
+    return { valid: true, state: 'PRICE_QUOTE_ONLY', message: 'Valid price quote without buildable transaction' };
+  }
+
+  if (typeof transaction === 'string' && transaction.length > 0) {
+    return { valid: true, state: 'BUILDABLE_TRANSACTION', message: 'Buildable transaction string present' };
+  }
+
+  // Handle router-dependent error codes (e.g. errorCode: 2)
+  if (errorCode !== undefined) {
+    return {
+      valid: true,
+      state: 'ROUTER_ERROR',
+      errorCode,
+      error: error || 'Unknown router error',
+      message: `Router returned error code ${errorCode}`
+    };
+  }
+
+  return { valid: false, error: 'Unrecognized transaction or error contract state' };
 }
 
-test('Jupiter Swap V2 Order Response Validation', async (t) => {
-  await t.test('should identify quote-only response', () => {
-    const res = { transaction: null };
-    assert.strictEqual(validateJupiterOrder(res).status, 'QUOTE_ONLY');
-  });
+```
 
-  await t.test('should identify non-buildable transaction', () => {
-    const res = { transaction: '' };
-    assert.strictEqual(validateJupiterOrder(res).status, 'NO_TRANSACTION_BUILDABLE');
-  });
+### Archivo Modificado/Creado: `research/tokengems-jupiter/safe-order.test.mjs`
+```mjs
+import test from 'node:test';
+import assert from 'node:assert';
+import { validateJupiterOrderResponse } from './safe-order.js';
 
-  await t.test('should identify valid transaction', () => {
-    const res = { transaction: 'base64_encoded_tx_data' };
-    assert.strictEqual(validateJupiterOrder(res).status, 'READY');
-  });
-
-  await t.test('should handle errorCode 2 (Insufficient SOL)', () => {
-    const res = { errorCode: 2, message: 'Insufficient SOL' };
-    assert.strictEqual(res.errorCode, 2);
-  });
-
-  await t.test('should handle errorCode 2 (Missing ATA)', () => {
-    const res = { errorCode: 2, message: 'Missing associated token account' };
-    assert.strictEqual(res.errorCode, 2);
-  });
-
-  await t.test('should throw on malformed transaction', () => {
-    const res = { transaction: 123 };
-    assert.throws(() => validateJupiterOrder(res), /Invalid transaction format/);
-  });
+test('validates null transaction quote-only response', () => {
+  const res = validateJupiterOrderResponse({ transaction: null });
+  assert.strictEqual(res.valid, true);
+  assert.strictEqual(res.state, 'QUOTE_ONLY');
 });
+
+test('validates empty string transaction price-quote-only response', () => {
+  const res = validateJupiterOrderResponse({ transaction: '' });
+  assert.strictEqual(res.valid, true);
+  assert.strictEqual(res.state, 'PRICE_QUOTE_ONLY');
+});
+
+test('validates buildable non-empty transaction string', () => {
+  const res = validateJupiterOrderResponse({ transaction: 'AQABAgIA...' });
+  assert.strictEqual(res.valid, true);
+  assert.strictEqual(res.state, 'BUILDABLE_TRANSACTION');
+});
+
+test('validates router error code 2 semantics', () => {
+  const res = validateJupiterOrderResponse({ errorCode: 2, error: 'Insufficient SOL for fees or missing ATA' });
+  assert.strictEqual(res.valid, true);
+  assert.strictEqual(res.state, 'ROUTER_ERROR');
+  assert.strictEqual(res.errorCode, 2);
+});
+
+test('rejects invalid response payloads', () => {
+  const res = validateJupiterOrderResponse(null);
+  assert.strictEqual(res.valid, false);
+});
+
+test('rejects unrecognized transaction structures', () => {
+  const res = validateJupiterOrderResponse({ transaction: 12345 });
+  assert.strictEqual(res.valid, false);
+});
+
 ```
